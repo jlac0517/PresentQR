@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClassCheck — Attendance</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap');
+
+  :root {
+    --bg: #0a0a0f; --surface: #13131a; --border: #1e1e2e;
+    --accent: #7fff6e; --accent2: #4fffdf; --danger: #ff5f5f;
+    --text: #e8e8f0; --muted: #5a5a7a; --card: #16161f;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Syne', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; }
+  body::before { content: ''; position: fixed; inset: 0; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E"); pointer-events: none; z-index: 0; opacity: 0.4; }
+
+  .view { display: none; min-height: 100vh; position: relative; z-index: 1; }
+  .view.active { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; }
+
+  /* LANDING */
+  #landing { gap: 3rem; background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(127,255,110,0.07) 0%, transparent 70%); }
+  .logo { text-align: center; }
+  .logo .mark { font-size: 0.7rem; font-family: 'DM Mono', monospace; letter-spacing: 0.3em; color: var(--accent); text-transform: uppercase; margin-bottom: 0.5rem; }
+  .logo h1 { font-size: clamp(3rem,10vw,5rem); font-weight: 800; letter-spacing: -0.03em; line-height: 1; background: linear-gradient(135deg, var(--text) 40%, var(--accent) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .logo p { font-family: 'DM Mono', monospace; color: var(--muted); font-size: 0.85rem; margin-top: 0.75rem; letter-spacing: 0.05em; }
+  .btn-group { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center; }
+
+  /* BUTTONS */
+  .btn { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 0.9rem; letter-spacing: 0.05em; padding: 0.9rem 2rem; border-radius: 0.5rem; border: none; cursor: pointer; transition: all 0.2s; text-transform: uppercase; }
+  .btn-primary { background: var(--accent); color: #0a0a0f; }
+  .btn-primary:hover { background: #9fff90; transform: translateY(-2px); box-shadow: 0 8px 24px rgba(127,255,110,0.3); }
+  .btn-secondary { background: transparent; color: var(--text); border: 1.5px solid var(--border); }
+  .btn-secondary:hover { border-color: var(--muted); transform: translateY(-2px); }
+  .btn-ghost { background: transparent; color: var(--muted); border: none; font-size: 0.8rem; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Syne', sans-serif; }
+  .btn-ghost:hover { color: var(--text); }
+  .btn-danger { background: var(--danger); color: white; border: none; }
+  .btn-danger:hover { background: #ff7878; transform: translateY(-2px); }
+
+  /* TEACHER SETUP */
+  #teacher { gap: 2rem; background: radial-gradient(ellipse 60% 50% at 50% 100%, rgba(79,255,223,0.05) 0%, transparent 70%); }
+  .teacher-header { text-align: center; }
+  .teacher-header h2 { font-size: 2rem; font-weight: 800; letter-spacing: -0.02em; }
+  .teacher-header p { font-family: 'DM Mono', monospace; color: var(--muted); font-size: 0.8rem; margin-top: 0.4rem; }
+  .session-setup { background: var(--card); border: 1.5px solid var(--border); border-radius: 1rem; padding: 2rem; width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 1.2rem; }
+  .field label { display: block; font-family: 'DM Mono', monospace; font-size: 0.72rem; letter-spacing: 0.12em; color: var(--muted); text-transform: uppercase; margin-bottom: 0.5rem; }
+  .field input, .field select { width: 100%; background: var(--surface); border: 1.5px solid var(--border); color: var(--text); font-family: 'Syne', sans-serif; font-size: 0.95rem; padding: 0.75rem 1rem; border-radius: 0.5rem; outline: none; transition: border-color 0.2s; }
+  .field input:focus, .field select:focus { border-color: var(--accent); }
+  .field select option { background: var(--surface); }
+
+  /* QR VIEW */
+  #qr-view { gap: 1.5rem; background: radial-gradient(ellipse 70% 60% at 50% 50%, rgba(127,255,110,0.06) 0%, transparent 70%); }
+  .qr-header { text-align: center; }
+  .qr-header .session-name { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; }
+  .qr-header .session-meta { font-family: 'DM Mono', monospace; font-size: 0.75rem; color: var(--muted); margin-top: 0.3rem; }
+  .qr-card { background: white; border-radius: 1.2rem; padding: 1.5rem; position: relative; box-shadow: 0 0 60px rgba(127,255,110,0.15), 0 0 120px rgba(127,255,110,0.06); }
+  #qrcode canvas, #qrcode img { display: block; }
+  .qr-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.88); border-radius: 1.2rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+  .qr-overlay.show { opacity: 1; pointer-events: all; }
+  .qr-overlay .expired-text { font-size: 1.1rem; font-weight: 800; color: var(--danger); letter-spacing: 0.05em; }
+  .qr-overlay .expired-sub { font-family: 'DM Mono', monospace; font-size: 0.72rem; color: rgba(255,255,255,0.5); }
+  .timer-ring { position: relative; width: 80px; height: 80px; }
+  .timer-ring svg { transform: rotate(-90deg); }
+  .ring-bg { fill: none; stroke: var(--border); stroke-width: 5; }
+  .ring-fg { fill: none; stroke: var(--accent); stroke-width: 5; stroke-linecap: round; transition: stroke-dashoffset 0.9s linear, stroke 0.5s; }
+  .ring-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: 'DM Mono', monospace; font-size: 1.1rem; font-weight: 500; }
+  .timer-label { font-family: 'DM Mono', monospace; font-size: 0.7rem; letter-spacing: 0.12em; color: var(--muted); text-transform: uppercase; }
+
+  /* REALTIME BADGE */
+  .realtime-badge { display: flex; align-items: center; gap: 0.5rem; font-family: 'DM Mono', monospace; font-size: 0.7rem; color: var(--muted); }
+  .realtime-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); transition: background 0.3s; }
+  .realtime-dot.live { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.4} }
+
+  /* ATTENDANCE LIST */
+  .attendance-list { background: var(--card); border: 1.5px solid var(--border); border-radius: 1rem; width: 100%; max-width: 380px; max-height: 200px; overflow-y: auto; }
+  .list-header { display: flex; justify-content: space-between; align-items: center; padding: 0.9rem 1.1rem; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--card); }
+  .list-header span { font-family: 'DM Mono', monospace; font-size: 0.72rem; letter-spacing: 0.1em; color: var(--muted); text-transform: uppercase; }
+  .list-header .count { background: var(--accent); color: #0a0a0f; font-weight: 700; font-size: 0.7rem; padding: 0.2rem 0.6rem; border-radius: 99px; }
+  .student-entry { display: flex; align-items: center; gap: 0.75rem; padding: 0.7rem 1.1rem; border-bottom: 1px solid rgba(30,30,46,0.5); animation: slideIn 0.3s ease; }
+  @keyframes slideIn { from{opacity:0;transform:translateX(-10px)} to{opacity:1;transform:translateX(0)} }
+  .student-entry:last-child { border-bottom: none; }
+  .student-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; box-shadow: 0 0 6px var(--accent); }
+  .student-name { font-size: 0.9rem; flex: 1; }
+  .student-time { font-family: 'DM Mono', monospace; font-size: 0.68rem; color: var(--muted); }
+  .empty-list { padding: 1.5rem; text-align: center; font-family: 'DM Mono', monospace; font-size: 0.75rem; color: var(--muted); }
+
+  /* HISTORY */
+  #history { gap: 2rem; background: radial-gradient(ellipse 60% 50% at 50% 0%, rgba(79,255,223,0.05) 0%, transparent 70%); }
+  .history-header { text-align: center; }
+  .history-header h2 { font-size: 2rem; font-weight: 800; letter-spacing: -0.02em; }
+  .history-header p { font-family: 'DM Mono', monospace; color: var(--muted); font-size: 0.8rem; margin-top: 0.4rem; }
+  .session-cards { width: 100%; max-width: 500px; display: flex; flex-direction: column; gap: 0.75rem; max-height: 60vh; overflow-y: auto; }
+  .session-card { background: var(--card); border: 1.5px solid var(--border); border-radius: 0.75rem; padding: 1rem 1.2rem; display: flex; align-items: center; gap: 1rem; cursor: pointer; transition: border-color 0.2s; }
+  .session-card:hover { border-color: var(--accent2); }
+  .session-card-info { flex: 1; }
+  .session-card-name { font-weight: 700; font-size: 0.95rem; }
+  .session-card-meta { font-family: 'DM Mono', monospace; font-size: 0.7rem; color: var(--muted); margin-top: 0.2rem; }
+  .session-card-count { font-family: 'DM Mono', monospace; font-size: 0.8rem; color: var(--accent); font-weight: 500; white-space: nowrap; }
+  .no-history { font-family: 'DM Mono', monospace; font-size: 0.8rem; color: var(--muted); text-align: center; padding: 2rem; }
+
+  /* DETAIL */
+  #detail { gap: 1.5rem; background: radial-gradient(ellipse 60% 50% at 50% 0%, rgba(127,255,110,0.05) 0%, transparent 70%); }
+  .detail-header { text-align: center; }
+  .detail-header h2 { font-size: 1.8rem; font-weight: 800; letter-spacing: -0.02em; }
+  .detail-header p { font-family: 'DM Mono', monospace; color: var(--muted); font-size: 0.75rem; margin-top: 0.3rem; }
+  .detail-list { background: var(--card); border: 1.5px solid var(--border); border-radius: 1rem; width: 100%; max-width: 420px; max-height: 55vh; overflow-y: auto; }
+
+  /* CHECKIN */
+  #checkin { gap: 2rem; background: radial-gradient(ellipse 60% 50% at 50% 0%, rgba(127,255,110,0.08) 0%, transparent 60%); }
+  .checkin-card { background: var(--card); border: 1.5px solid var(--border); border-radius: 1.2rem; padding: 2.5rem 2rem; width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 1.5rem; }
+  .checkin-icon { width: 60px; height: 60px; border-radius: 1rem; background: rgba(127,255,110,0.1); border: 1.5px solid rgba(127,255,110,0.25); display: flex; align-items: center; justify-content: center; font-size: 1.5rem; }
+  .checkin-title { font-size: 1.8rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; }
+  .checkin-sub { font-family: 'DM Mono', monospace; font-size: 0.75rem; color: var(--muted); margin-top: 0.3rem; }
+  .checkin-session { font-family: 'DM Mono', monospace; font-size: 0.78rem; color: var(--accent2); background: rgba(79,255,223,0.08); padding: 0.5rem 0.9rem; border-radius: 0.4rem; border: 1px solid rgba(79,255,223,0.2); }
+  .name-input { width: 100%; background: var(--surface); border: 1.5px solid var(--border); color: var(--text); font-family: 'Syne', sans-serif; font-size: 1.1rem; font-weight: 600; padding: 1rem 1.1rem; border-radius: 0.6rem; outline: none; transition: all 0.2s; }
+  .name-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(127,255,110,0.1); }
+  .name-input::placeholder { color: var(--muted); font-weight: 400; }
+  .submit-btn { width: 100%; background: var(--accent); color: #0a0a0f; font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 1rem; border-radius: 0.6rem; border: none; cursor: pointer; transition: all 0.2s; }
+  .submit-btn:hover:not(:disabled) { background: #9fff90; transform: translateY(-2px); box-shadow: 0 8px 24px rgba(127,255,110,0.4); }
+  .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+  .error-msg { font-family: 'DM Mono', monospace; font-size: 0.75rem; color: var(--danger); text-align: center; display: none; }
+  .error-msg.show { display: block; }
+
+  /* SUCCESS */
+  #success { gap: 1.5rem; text-align: center; background: radial-gradient(ellipse 70% 60% at 50% 50%, rgba(127,255,110,0.1) 0%, transparent 70%); }
+  .success-icon { width: 100px; height: 100px; border-radius: 50%; background: rgba(127,255,110,0.12); border: 2px solid rgba(127,255,110,0.4); display: flex; align-items: center; justify-content: center; font-size: 2.5rem; animation: popIn 0.4s cubic-bezier(0.34,1.56,0.64,1); box-shadow: 0 0 40px rgba(127,255,110,0.2); }
+  @keyframes popIn { from{transform:scale(0);opacity:0} to{transform:scale(1);opacity:1} }
+  .success-name { font-size: 2rem; font-weight: 800; letter-spacing: -0.03em; background: linear-gradient(135deg, var(--text) 40%, var(--accent) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .success-label { font-family: 'DM Mono', monospace; font-size: 0.75rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
+  .success-session { font-family: 'DM Mono', monospace; font-size: 0.8rem; color: var(--accent2); background: rgba(79,255,223,0.08); padding: 0.5rem 1rem; border-radius: 0.4rem; border: 1px solid rgba(79,255,223,0.2); }
+
+  /* EXPIRED */
+  #expired { gap: 1.5rem; text-align: center; background: radial-gradient(ellipse 70% 60% at 50% 50%, rgba(255,95,95,0.06) 0%, transparent 70%); }
+  .expired-icon { font-size: 3rem; animation: shake 0.4s ease; }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-8px)} 75%{transform:translateX(8px)} }
+
+  /* SPINNER */
+  .spinner { width: 18px; height: 18px; border: 2px solid rgba(127,255,110,0.2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; vertical-align: middle; margin-right: 0.4rem; }
+  @keyframes spin { to{transform:rotate(360deg)} }
+
+  .qr-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- LANDING -->
+<div class="view active" id="landing">
+  <div class="logo">
+    <div class="mark">// Attendance System</div>
+    <h1>ClassCheck</h1>
+    <p>QR-based presence verification · powered by Supabase</p>
+  </div>
+  <div class="btn-group">
+    <button class="btn btn-primary" onclick="goTeacher()">📋 Teacher Dashboard</button>
+    <button class="btn btn-secondary" onclick="openHistory()">🗂 Past Sessions</button>
+  </div>
+</div>
+
+<!-- TEACHER SETUP -->
+<div class="view" id="teacher">
+  <div class="teacher-header">
+    <h2>Start Session</h2>
+    <p>Configure your class then project the QR code</p>
+  </div>
+  <div class="session-setup">
+    <div class="field">
+      <label>Class / Subject Name</label>
+      <input type="text" id="className" placeholder="e.g. Math 101 — Period 3" />
+    </div>
+    <div class="field">
+      <label>QR Refresh Interval</label>
+      <select id="refreshInterval">
+        <option value="60">Every 60 seconds (recommended)</option>
+        <option value="30">Every 30 seconds (strict)</option>
+        <option value="120">Every 2 minutes (relaxed)</option>
+        <option value="300">Every 5 minutes</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Your Name (Teacher)</label>
+      <input type="text" id="teacherName" placeholder="e.g. Ms. Garcia" />
+    </div>
+    <button class="btn btn-primary" id="startBtn" onclick="startSession()" style="width:100%">Generate QR Code →</button>
+    <button class="btn-ghost" onclick="showView('landing')" style="text-align:center;width:100%">← Back</button>
+  </div>
+</div>
+
+<!-- QR DISPLAY -->
+<div class="view" id="qr-view">
+  <div class="qr-header">
+    <div class="session-name" id="displayClassName">Math 101</div>
+    <div class="session-meta" id="displayTeacher">Teacher • Session Active</div>
+  </div>
+  <div class="qr-card">
+    <div id="qrcode"></div>
+    <div class="qr-overlay" id="qrOverlay">
+      <div class="expired-text">QR EXPIRED</div>
+      <div class="expired-sub">Refreshing…</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap;justify-content:center;">
+    <div class="timer-ring">
+      <svg width="80" height="80" viewBox="0 0 80 80">
+        <circle class="ring-bg" cx="40" cy="40" r="34"/>
+        <circle class="ring-fg" id="ringFg" cx="40" cy="40" r="34" stroke-dasharray="213.6" stroke-dashoffset="0"/>
+      </svg>
+      <div class="ring-text" id="ringText">60</div>
+    </div>
+    <div>
+      <div class="timer-label">Refreshes in</div>
+      <div style="font-family:'DM Mono',monospace;font-size:0.8rem;color:var(--muted);margin-top:0.2rem;" id="refreshCount">Refresh #1</div>
+      <div class="realtime-badge" style="margin-top:0.5rem;">
+        <div class="realtime-dot" id="realtimeDot"></div>
+        <span id="realtimeLabel">connecting…</span>
+      </div>
+    </div>
+  </div>
+  <div class="attendance-list" id="attendanceList">
+    <div class="list-header">
+      <span>Students Present</span>
+      <span class="count" id="studentCount">0</span>
+    </div>
+    <div class="empty-list" id="emptyListMsg">No check-ins yet — share the QR code!</div>
+  </div>
+  <div class="qr-actions">
+    <button class="btn btn-secondary" onclick="exportCSV()">⬇ Export CSV</button>
+    <button class="btn btn-secondary" onclick="goTeacher()">⚙ New Session</button>
+    <button class="btn btn-danger" onclick="endSession()">■ End Session</button>
+  </div>
+</div>
+
+<!-- PAST SESSIONS -->
+<div class="view" id="history">
+  <div class="history-header">
+    <h2>Past Sessions</h2>
+    <p>All records stored in Supabase</p>
+  </div>
+  <div class="session-cards" id="sessionCards">
+    <div class="no-history"><span class="spinner"></span> Loading…</div>
+  </div>
+  <div style="display:flex;gap:0.75rem;flex-wrap:wrap;justify-content:center;margin-top:0.5rem;">
+    <button class="btn btn-secondary" onclick="showView('landing')">← Back</button>
+    <button class="btn btn-danger" onclick="clearAllSessions()">🗑 Clear All</button>
+  </div>
+</div>
+
+<!-- SESSION DETAIL -->
+<div class="view" id="detail">
+  <div class="detail-header">
+    <h2 id="detailClassName">Session</h2>
+    <p id="detailMeta">Teacher · Date</p>
+  </div>
+  <div class="detail-list" id="detailList">
+    <div class="list-header">
+      <span>Students Present</span>
+      <span class="count" id="detailCount">0</span>
+    </div>
+  </div>
+  <div style="display:flex;gap:0.75rem;flex-wrap:wrap;justify-content:center;">
+    <button class="btn btn-secondary" onclick="openHistory()">← Sessions</button>
+    <button class="btn btn-primary" onclick="exportDetailCSV()">⬇ Export CSV</button>
+    <button class="btn btn-danger" onclick="deleteSession()">🗑 Delete</button>
+  </div>
+</div>
+
+<!-- STUDENT CHECK-IN -->
+<div class="view" id="checkin">
+  <div class="checkin-card">
+    <div class="checkin-icon">✏️</div>
+    <div>
+      <div class="checkin-title">Mark Your<br>Attendance</div>
+      <div class="checkin-sub">Enter your full name to check in</div>
+    </div>
+    <div class="checkin-session" id="checkinSessionInfo">Loading session…</div>
+    <input class="name-input" id="studentName" type="text" placeholder="Your full name"
+      maxlength="80" autocomplete="name" autocapitalize="words"
+      onkeydown="if(event.key==='Enter') submitAttendance()" />
+    <div class="error-msg" id="errorMsg">Please enter your name to continue.</div>
+    <button class="submit-btn" id="submitBtn" onclick="submitAttendance()">Check In →</button>
+    <button class="btn-ghost" onclick="window.location.href=window.location.pathname" style="text-align:center;width:100%">← Cancel</button>
+  </div>
+</div>
+
+<!-- SUCCESS -->
+<div class="view" id="success">
+  <div class="success-icon">✅</div>
+  <div class="success-label">Attendance Recorded</div>
+  <div class="success-name" id="successName">Student</div>
+  <div class="success-session" id="successSession">Session</div>
+  <p style="font-family:'DM Mono',monospace;font-size:0.75rem;color:var(--muted);max-width:260px;text-align:center;">
+    You're all set! Your teacher can see your check-in in real time.
+  </p>
+</div>
+
+<!-- EXPIRED -->
+<div class="view" id="expired">
+  <div class="expired-icon">⏰</div>
+  <h2 style="font-size:2rem;font-weight:800;letter-spacing:-0.03em;">QR Code Expired</h2>
+  <p style="font-family:'DM Mono',monospace;font-size:0.8rem;color:var(--muted);max-width:280px;text-align:center;">
+    This QR code is no longer valid. Ask your teacher to show the latest code and scan again.
+  </p>
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+//  SUPABASE
+// ═══════════════════════════════════════════
+const SUPABASE_URL = 'https://cmjcjqfygruekjadmqiq.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_bB_XBjO86U4FglmtWEGNEQ_qGONgEAN';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ═══════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════
+const S = {
+  sessionId: null, className: '', teacherName: '',
+  refreshInterval: 60, tokenExpiry: 0, refreshCount: 0,
+  students: [], timerHandle: null, realtimeSub: null,
+  circumference: 2 * Math.PI * 34,
+  viewingSessionId: null, viewingSession: null,
+};
+
+// ═══════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════
+function showView(id) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+function goTeacher() {
+  document.getElementById('className').style.borderColor = '';
+  showView('teacher');
+}
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function fmtTime(iso) {
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+function fmtDate(iso) {
+  return new Date(iso).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
+}
+function nowISO() { return new Date().toISOString(); }
+
+// FNV-1a token — deterministic per sessionId + time window
+function buildToken(sessionId, windowIndex) {
+  const seed = 'CC' + sessionId + '|' + windowIndex;
+  let h = 0x811c9dc5;
+  for (let i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(36).toUpperCase().padStart(7, '0');
+}
+
+function getUrlParams() {
+  const p = {};
+  window.location.search.slice(1).split('&').forEach(pair => {
+    const [k, v] = pair.split('=');
+    if (k) p[decodeURIComponent(k)] = decodeURIComponent(v || '');
+  });
+  return p;
+}
+
+// ═══════════════════════════════════════════
+//  TEACHER — START SESSION
+// ═══════════════════════════════════════════
+async function startSession() {
+  const name    = document.getElementById('className').value.trim();
+  const teacher = document.getElementById('teacherName').value.trim();
+  const ivl     = parseInt(document.getElementById('refreshInterval').value);
+
+  if (!name) {
+    const el = document.getElementById('className');
+    el.style.borderColor = 'var(--danger)'; el.focus(); return;
+  }
+
+  const btn = document.getElementById('startBtn');
+  btn.innerHTML = '<span class="spinner"></span>Creating…'; btn.disabled = true;
+
+  clearInterval(S.timerHandle);
+  if (S.realtimeSub) { await sb.removeChannel(S.realtimeSub); S.realtimeSub = null; }
+
+  S.className = name; S.teacherName = teacher || 'Teacher';
+  S.refreshInterval = ivl; S.students = []; S.refreshCount = 0;
+  S.sessionId = 'CC-' + Date.now().toString(36).toUpperCase();
+
+  const { error } = await sb.from('sessions').insert({
+    id: S.sessionId, class_name: S.className, teacher_name: S.teacherName,
+  });
+
+  btn.innerHTML = 'Generate QR Code →'; btn.disabled = false;
+  if (error) { alert('Supabase error: ' + error.message); return; }
+
+  document.getElementById('displayClassName').textContent = S.className;
+  document.getElementById('displayTeacher').textContent   = S.teacherName + ' • Session Active';
+  document.getElementById('studentCount').textContent     = '0';
+  document.getElementById('emptyListMsg').style.display   = 'block';
+  document.getElementById('attendanceList').querySelectorAll('.student-entry').forEach(e => e.remove());
+
+  showView('qr-view');
+  refreshQR();
+  startTimer();
+  subscribeToCheckins();
+}
+
+// ═══════════════════════════════════════════
+//  QR REFRESH
+// ═══════════════════════════════════════════
+function refreshQR() {
+  S.refreshCount++;
+  const wi   = Math.floor(Date.now() / (S.refreshInterval * 1000));
+  const tok  = buildToken(S.sessionId, wi);
+  S.tokenExpiry = (wi + 1) * S.refreshInterval * 1000;
+
+  document.getElementById('qrOverlay').classList.remove('show');
+  document.getElementById('refreshCount').textContent = 'Refresh #' + S.refreshCount;
+
+  const base = window.location.href.split('?')[0].split('#')[0];
+  const url  = base
+    + '?checkin=1&sid=' + encodeURIComponent(S.sessionId)
+    + '&wi='  + wi
+    + '&tok=' + encodeURIComponent(tok)
+    + '&cls=' + encodeURIComponent(S.className)
+    + '&tch=' + encodeURIComponent(S.teacherName)
+    + '&exp=' + S.tokenExpiry
+    + '&ivl=' + S.refreshInterval;
+
+  document.getElementById('qrcode').innerHTML = '';
+  new QRCode(document.getElementById('qrcode'), {
+    text: url, width: 220, height: 220,
+    colorDark: '#000000', colorLight: '#ffffff',
+    correctLevel: QRCode.CorrectLevel.M
+  });
+}
+
+function startTimer() {
+  clearInterval(S.timerHandle);
+  const ring = document.getElementById('ringFg');
+  const txt  = document.getElementById('ringText');
+  S.timerHandle = setInterval(() => {
+    const rem  = Math.max(0, Math.ceil((S.tokenExpiry - Date.now()) / 1000));
+    const frac = rem / S.refreshInterval;
+    ring.style.strokeDashoffset = S.circumference * (1 - frac);
+    txt.textContent = rem;
+    ring.style.stroke = frac > 0.5 ? 'var(--accent)' : frac > 0.25 ? '#ffe246' : 'var(--danger)';
+    if (rem <= 0) { document.getElementById('qrOverlay').classList.add('show'); setTimeout(refreshQR, 800); }
+  }, 500);
+}
+
+// ═══════════════════════════════════════════
+//  REALTIME SUBSCRIPTION
+// ═══════════════════════════════════════════
+function setRealtimeStatus(live) {
+  const dot   = document.getElementById('realtimeDot');
+  const label = document.getElementById('realtimeLabel');
+  if (!dot) return;
+  dot.classList.toggle('live', live);
+  label.textContent = live ? 'live' : 'connecting…';
+}
+
+function subscribeToCheckins() {
+  if (S.realtimeSub) sb.removeChannel(S.realtimeSub);
+  S.realtimeSub = sb.channel('room-' + S.sessionId)
+    .on('postgres_changes', {
+      event: 'INSERT', schema: 'public', table: 'checkins',
+      filter: 'session_id=eq.' + S.sessionId
+    }, payload => {
+      const r = payload.new;
+      const entry = { name: r.student_name, time: fmtTime(r.checked_in_at) };
+      S.students.push(entry);
+      appendStudentRow(entry);
+    })
+    .subscribe(status => setRealtimeStatus(status === 'SUBSCRIBED'));
+}
+
+function appendStudentRow(entry) {
+  const list  = document.getElementById('attendanceList');
+  const empty = document.getElementById('emptyListMsg');
+  if (empty) empty.style.display = 'none';
+  const el = document.createElement('div');
+  el.className = 'student-entry';
+  el.innerHTML = `<div class="student-dot"></div><div class="student-name">${esc(entry.name)}</div><div class="student-time">${entry.time}</div>`;
+  list.appendChild(el);
+  list.scrollTop = list.scrollHeight;
+  document.getElementById('studentCount').textContent = S.students.length;
+}
+
+async function endSession() {
+  clearInterval(S.timerHandle);
+  if (S.realtimeSub) { await sb.removeChannel(S.realtimeSub); S.realtimeSub = null; }
+  S.sessionId = null;
+  showView('landing');
+}
+
+// ═══════════════════════════════════════════
+//  STUDENT CHECK-IN
+// ═══════════════════════════════════════════
+async function submitAttendance() {
+  const name  = document.getElementById('studentName').value.trim();
+  const errEl = document.getElementById('errorMsg');
+  errEl.textContent = 'Please enter your name to continue.';
+  errEl.classList.remove('show');
+
+  if (!name) { errEl.classList.add('show'); document.getElementById('studentName').focus(); return; }
+  if (Date.now() > S.tokenExpiry) { showView('expired'); return; }
+
+  const btn = document.getElementById('submitBtn');
+  btn.innerHTML = '<span class="spinner"></span>Saving…'; btn.disabled = true;
+
+  // Duplicate check
+  const { data: existing } = await sb.from('checkins')
+    .select('id').eq('session_id', S.sessionId).ilike('student_name', name).limit(1);
+
+  if (existing && existing.length > 0) {
+    errEl.textContent = 'You\'ve already checked in for this session!';
+    errEl.classList.add('show');
+    btn.innerHTML = 'Check In →'; btn.disabled = false;
+    return;
+  }
+
+  const { error } = await sb.from('checkins').insert({ session_id: S.sessionId, student_name: name });
+
+  btn.innerHTML = 'Check In →'; btn.disabled = false;
+  if (error) { errEl.textContent = 'Error: ' + error.message; errEl.classList.add('show'); return; }
+
+  document.getElementById('successName').textContent    = name;
+  document.getElementById('successSession').textContent = '📚 ' + S.className;
+  showView('success');
+}
+
+// ═══════════════════════════════════════════
+//  HISTORY
+// ═══════════════════════════════════════════
+async function openHistory() {
+  showView('history');
+  const cont = document.getElementById('sessionCards');
+  cont.innerHTML = '<div class="no-history"><span class="spinner"></span> Loading…</div>';
+
+  const { data, error } = await sb.from('sessions')
+    .select('id, class_name, teacher_name, created_at, checkins(count)')
+    .order('created_at', { ascending: false });
+
+  if (error || !data) { cont.innerHTML = '<div class="no-history">Error loading sessions.</div>'; return; }
+  if (!data.length)   { cont.innerHTML = '<div class="no-history">No sessions recorded yet.</div>'; return; }
+
+  cont.innerHTML = '';
+  data.forEach(sess => {
+    const count = sess.checkins?.[0]?.count ?? 0;
+    const date  = fmtDate(sess.created_at);
+    const card  = document.createElement('div');
+    card.className = 'session-card';
+    card.innerHTML = `
+      <div class="session-card-info">
+        <div class="session-card-name">${esc(sess.class_name)}</div>
+        <div class="session-card-meta">${esc(sess.teacher_name)} · ${date}</div>
+      </div>
+      <div class="session-card-count">${count} student${count !== 1 ? 's' : ''}</div>`;
+    card.onclick = () => openDetail(sess.id, sess.class_name, sess.teacher_name, date);
+    cont.appendChild(card);
+  });
+}
+
+async function openDetail(sessionId, className, teacherName, date) {
+  S.viewingSessionId = sessionId;
+  S.viewingSession   = { className, teacherName, date };
+  document.getElementById('detailClassName').textContent = className;
+  document.getElementById('detailMeta').textContent      = teacherName + ' · ' + date;
+
+  const list = document.getElementById('detailList');
+  list.querySelectorAll('.student-entry, .empty-list').forEach(e => e.remove());
+  const loading = Object.assign(document.createElement('div'), { className: 'empty-list', innerHTML: '<span class="spinner"></span> Loading…' });
+  list.appendChild(loading);
+  showView('detail');
+
+  const { data, error } = await sb.from('checkins')
+    .select('student_name, checked_in_at')
+    .eq('session_id', sessionId)
+    .order('checked_in_at', { ascending: true });
+
+  loading.remove();
+  if (error || !data || !data.length) {
+    const empty = Object.assign(document.createElement('div'), { className: 'empty-list', textContent: 'No students checked in.' });
+    list.appendChild(empty);
+    document.getElementById('detailCount').textContent = '0';
+    return;
+  }
+
+  document.getElementById('detailCount').textContent = data.length;
+  data.forEach(c => {
+    const el = document.createElement('div');
+    el.className = 'student-entry';
+    el.innerHTML = `<div class="student-dot"></div><div class="student-name">${esc(c.student_name)}</div><div class="student-time">${fmtTime(c.checked_in_at)}</div>`;
+    list.appendChild(el);
+  });
+}
+
+async function deleteSession() {
+  if (!S.viewingSessionId) return;
+  if (!confirm('Delete this session and all its check-ins? This cannot be undone.')) return;
+  await sb.from('sessions').delete().eq('id', S.viewingSessionId);
+  S.viewingSessionId = null;
+  openHistory();
+}
+
+async function clearAllSessions() {
+  if (!confirm('Delete ALL sessions and check-ins? This cannot be undone.')) return;
+  await sb.from('sessions').delete().neq('id', '__none__');
+  openHistory();
+}
+
+// ═══════════════════════════════════════════
+//  EXPORT CSV
+// ═══════════════════════════════════════════
+async function exportCSV() {
+  if (!S.sessionId) return;
+  const { data } = await sb.from('checkins').select('student_name, checked_in_at')
+    .eq('session_id', S.sessionId).order('checked_in_at');
+  if (!data || !data.length) { alert('No students have checked in yet.'); return; }
+  dlCSV(data.map(c => ({ name: c.student_name, time: fmtTime(c.checked_in_at) })), S.className, S.teacherName);
+}
+
+async function exportDetailCSV() {
+  if (!S.viewingSessionId || !S.viewingSession) return;
+  const { data } = await sb.from('checkins').select('student_name, checked_in_at')
+    .eq('session_id', S.viewingSessionId).order('checked_in_at');
+  if (!data || !data.length) { alert('No records to export.'); return; }
+  dlCSV(data.map(c => ({ name: c.student_name, time: fmtTime(c.checked_in_at) })), S.viewingSession.className, S.viewingSession.teacherName);
+}
+
+function dlCSV(rows, className, teacherName) {
+  const date = new Date().toLocaleDateString();
+  let csv = 'Name,Check-In Time,Session,Teacher,Date\n';
+  rows.forEach(r => { csv += `"${r.name}","${r.time}","${className}","${teacherName}","${date}"\n`; });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = `attendance_${className.replace(/\s+/g,'_')}.csv`;
+  a.click();
+}
+
+// ═══════════════════════════════════════════
+//  BOOT — handle QR scan
+// ═══════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', () => {
+  const p = getUrlParams();
+  if (p.checkin !== '1' || !p.sid || !p.tok) return;
+
+  const exp = parseInt(p.exp || '0');
+  const ivl = parseInt(p.ivl || '60');
+  const wi  = parseInt(p.wi  || '0');
+
+  if (p.tok !== buildToken(p.sid, wi) || Date.now() > exp) {
+    showView('expired'); return;
+  }
+
+  S.sessionId = p.sid; S.className = p.cls || 'Class Session';
+  S.teacherName = p.tch || 'Teacher'; S.tokenExpiry = exp; S.refreshInterval = ivl;
+
+  document.getElementById('checkinSessionInfo').textContent = '📚 ' + S.className + ' · ' + S.teacherName;
+  document.getElementById('studentName').value = '';
+  showView('checkin');
+  setTimeout(() => document.getElementById('studentName').focus(), 300);
+});
+</script>
+</body>
+</html>
